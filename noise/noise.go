@@ -1,72 +1,28 @@
-package main
+package noise
 
 import (
-	"fmt"
-	"log"
 	"runtime"
 	"sync"
-
-	"github.com/veandco/go-sdl2/sdl"
 )
 
-const winWidth, winHeight int = 800, 600
+//NoiseType 代表那种类型的noise
+type TypeNoise int
 
-func lerp(b1, b2 byte, pct float32) byte {
-	return byte(float32(b1) + pct*(float32(b2)-float32(b1)))
-}
+const (
+	//FBM 从fbm型noise开始
+	FBM TypeNoise = iota
+	//TURBULENCE turbulence型
+	TURBULENCE
+)
 
-func colorLerp(c1, c2 color, pct float32) color {
-	return color{lerp(c1.r, c2.r, pct), lerp(c1.g, c2.g, pct), lerp(c1.b, c2.b, pct)}
-}
+//现在我们可以返回两种noise: Turbulence() and Fbm2 (fractal brownian motion)
 
-func getDradient(c1, c2 color) []color {
-	res := make([]color, 256)
-	for i := range res {
-		pct := float32(i) / float32(255)
-		res[i] = colorLerp(c1, c2, pct)
-	}
-	return res
-}
-
-func getDualDradient(c1, c2, c3, c4 color) []color {
-	res := make([]color, 256)
-	for i := range res {
-		pct := float32(i) / float32(255)
-		if pct < 0.5 {
-			res[i] = colorLerp(c1, c2, pct*float32(2))
-		} else {
-			res[i] = colorLerp(c3, c4, pct*float32(1.5)-float32(0.5))
-		}
-	}
-	return res
-}
-
-func clamp(min, max, v int) int {
-	if v < min {
-		v = min
-	} else if v > max {
-		v = max
-	}
-	return v
-}
-
-func rescaleAndDraw(noise []float32, min, max float32, gradient []color, pixels []byte) {
-	scale := 255.0 / (max - min)
-	offest := min * scale
-	for i := range noise {
-		noise[i] = noise[i]*scale - offest
-		c := gradient[clamp(0, 255, int(noise[i]))]
-		pixels[i*4] = c.r
-		pixels[i*4+1] = c.g
-		pixels[i*4+2] = c.b
-	}
-}
-
-func turbulence(x, y, frequency, lacunatity, gain float32, octaves int) float32 {
+//Turbulence 让代表noise的值 像湍流一样
+func Turbulence(x, y, frequency, lacunatity, gain float32, octaves int) float32 {
 	var sum float32
 	amplitude := float32(1.0)
 	for i := 0; i < octaves; i++ {
-		f := snoise2(x*frequency, y*frequency) * amplitude
+		f := Snoise2(x*frequency, y*frequency) * amplitude
 		if f < 0 {
 			f = -1.0 * f
 		}
@@ -77,23 +33,24 @@ func turbulence(x, y, frequency, lacunatity, gain float32, octaves int) float32 
 	return sum
 }
 
-//fractal brownian motion 布朗运动
+//Fbm2 (fractal brownian motion) 布朗运动
 //通过一些参数将代表noise的值 改变
-func fbm2(x, y, frequency, lacunatity, gain float32, octaves int) float32 {
+func Fbm2(x, y, frequency, lacunatity, gain float32, octaves int) float32 {
 	var sum float32
 	amplitude := float32(1.0)
 	for i := 0; i < octaves; i++ {
-		sum += snoise2(x*frequency, y*frequency) * amplitude
+		sum += Snoise2(x*frequency, y*frequency) * amplitude
 		frequency *= lacunatity
 		amplitude *= gain
 	}
 	return sum
 }
 
-func makenoise(pixels []byte, frequency, lacunatity, gain float32, octaves, w, h int) {
+//MakeNoise generates a 2d block of noise
+func MakeNoise(noiseType TypeNoise, frequency, lacunatity, gain float32, octaves, w, h int) []float32 {
 	var mutex = &sync.Mutex{}
-	noise := make([]float32, winHeight*winWidth)
-	fmt.Println("frequency: ", frequency, " lacunatity:", lacunatity, " gain:", gain, " octaves:", octaves)
+	noise := make([]float32, w*h)
+	// fmt.Println("frequency: ", frequency, " lacunatity:", lacunatity, " gain:", gain, " octaves:", octaves)
 	min := float32(9999.0)
 	max := float32(-9999.0)
 	//TODO goroutinue优化
@@ -109,8 +66,11 @@ func makenoise(pixels []byte, frequency, lacunatity, gain float32, octaves, w, h
 			for j := start; j < end; j++ {
 				x := j % w
 				y := (j - x) / h
-				noise[j] = turbulence(float32(x), float32(y), frequency, lacunatity, gain, octaves)
-
+				if noiseType == TURBULENCE {
+					noise[j] = Turbulence(float32(x), float32(y), frequency, lacunatity, gain, octaves)
+				} else if noiseType == FBM {
+					noise[j] = Fbm2(float32(x), float32(y), frequency, lacunatity, gain, octaves)
+				}
 				//is this always correct? go run -race .go has some WARNING
 				if noise[j] < min || noise[j] > max {
 					mutex.Lock()
@@ -126,95 +86,7 @@ func makenoise(pixels []byte, frequency, lacunatity, gain float32, octaves, w, h
 		}(i)
 	}
 	wg.Wait()
-	// gradient := getDradient(color{255, 0, 0}, color{255, 242, 0})
-	gradient := getDualDradient(color{0, 0, 175}, color{80, 160, 244}, color{12, 192, 75}, color{255, 255, 255})
-
-	rescaleAndDraw(noise, min, max, gradient, pixels)
-}
-
-type color struct {
-	r, g, b byte
-}
-
-func setPixels(x, y int, c color, pixels []byte) {
-	index := (y*winWidth + x) * 4
-	if index < len(pixels)-4 && index >= 0 {
-		pixels[index] = c.r
-		pixels[index+1] = c.g
-		pixels[index+2] = c.b
-	}
-}
-
-func main() {
-	err := sdl.Init(sdl.INIT_EVERYTHING)
-	if err != nil {
-		log.Fatal(err)
-		return
-	}
-	wind, e := sdl.CreateWindow("game_demo", sdl.WINDOWPOS_UNDEFINED, sdl.WINDOWPOS_UNDEFINED,
-		int32(winWidth), int32(winHeight), sdl.WINDOW_SHOWN)
-	if e != nil {
-		log.Fatal(e)
-	}
-	defer wind.Destroy()
-	renderer, err := sdl.CreateRenderer(wind, -1, sdl.RENDERER_ACCELERATED)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer renderer.Destroy()
-	tex, err := renderer.CreateTexture(sdl.PIXELFORMAT_ABGR8888, sdl.TEXTUREACCESS_STREAMING, int32(winWidth), int32(winHeight))
-	if err != nil {
-		log.Fatal(err)
-		return
-	}
-	defer tex.Destroy()
-
-	pixels := make([]byte, winWidth*winHeight*4)
-
-	keyState := sdl.GetKeyboardState()
-
-	// -- 让代表noise的值 "布朗运动"的参数
-	octaves := 3
-	frequency := float32(.01)
-	gain := float32(.2)
-	lacunatity := float32(3.0)
-	// --
-
-	makenoise(pixels, frequency, lacunatity, gain, octaves, winWidth, winHeight)
-	for {
-		for event := sdl.PollEvent(); event != nil; event = sdl.PollEvent() {
-			switch event.(type) {
-			case *sdl.QuitEvent:
-				return
-			}
-		}
-		mult := 1
-		if keyState[sdl.SCANCODE_LSHIFT] != 0 || keyState[sdl.SCANCODE_RSHIFT] != 0 {
-			mult = -mult
-		}
-		if keyState[sdl.SCANCODE_O] != 0 {
-			octaves = octaves + 1*mult
-			makenoise(pixels, frequency, lacunatity, gain, octaves, winWidth, winHeight)
-		}
-		if keyState[sdl.SCANCODE_F] != 0 {
-			frequency = frequency + 0.001*float32(mult)
-			makenoise(pixels, frequency, lacunatity, gain, octaves, winWidth, winHeight)
-		}
-		if keyState[sdl.SCANCODE_G] != 0 {
-			gain = gain + 0.1*float32(mult)
-			makenoise(pixels, frequency, lacunatity, gain, octaves, winWidth, winHeight)
-		}
-		if keyState[sdl.SCANCODE_L] != 0 {
-			lacunatity = lacunatity + 0.1*lacunatity
-			makenoise(pixels, frequency, lacunatity, gain, octaves, winWidth, winHeight)
-
-		}
-
-		_ = tex.Update(nil, pixels, winWidth*4)
-		_ = renderer.Copy(tex, nil, nil)
-		renderer.Present()
-		sdl.Delay(16)
-	}
+	return noise
 }
 
 /* This code ported to Go from Stefan Gustavson's C implementation, his comments follow:
@@ -300,8 +172,8 @@ func grad2(hash uint8, x, y float32) float32 {
 	return u + v
 }
 
-// 2D simplex noise
-func snoise2(x, y float32) float32 {
+//Snoise2 return a 2D simplex noise
+func Snoise2(x, y float32) float32 {
 
 	const F2 float32 = 0.366025403 // F2 = 0.5*(sqrt(3.0)-1.0)
 	const G2 float32 = 0.211324865 // G2 = (3.0-Math.sqrt(3.0))/6.0

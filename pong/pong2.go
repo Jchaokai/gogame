@@ -252,8 +252,8 @@ func main() {
 		player2.draw(pixels)
 		ball.draw(pixels)
 
-		tex.Update(nil, pixels, 800*4)
-		renderer.Copy(tex, nil, nil)
+		_ = tex.Update(nil, pixels, 800*4)
+		_ = renderer.Copy(tex, nil, nil)
 		renderer.Present()
 
 		elapsedTime = float32(time.Since(frameStart).Seconds())
