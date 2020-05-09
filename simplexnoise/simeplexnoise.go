@@ -19,7 +19,7 @@ func colorLerp(c1, c2 color, pct float32) color {
 	return color{lerp(c1.r, c2.r, pct), lerp(c1.g, c2.g, pct), lerp(c1.b, c2.b, pct)}
 }
 
-func getDradient(c1, c2 color) []color {
+func getGradient(c1, c2 color) []color {
 	res := make([]color, 256)
 	for i := range res {
 		pct := float32(i) / float32(255)
@@ -28,7 +28,7 @@ func getDradient(c1, c2 color) []color {
 	return res
 }
 
-func getDualDradient(c1, c2, c3, c4 color) []color {
+func getDualGradient(c1, c2, c3, c4 color) []color {
 	res := make([]color, 256)
 	for i := range res {
 		pct := float32(i) / float32(255)
@@ -126,8 +126,8 @@ func makenoise(pixels []byte, frequency, lacunatity, gain float32, octaves, w, h
 		}(i)
 	}
 	wg.Wait()
-	// gradient := getDradient(color{255, 0, 0}, color{255, 242, 0})
-	gradient := getDualDradient(color{0, 0, 175}, color{80, 160, 244}, color{12, 192, 75}, color{255, 255, 255})
+	// gradient := getGradient(color{255, 0, 0}, color{255, 242, 0})
+	gradient := getDualGradient(color{0, 0, 175}, color{80, 160, 244}, color{12, 192, 75}, color{255, 255, 255})
 
 	rescaleAndDraw(noise, min, max, gradient, pixels)
 }

@@ -47,12 +47,12 @@ func Fbm2(x, y, frequency, lacunatity, gain float32, octaves int) float32 {
 }
 
 //MakeNoise generates a 2d block of noise
-func MakeNoise(noiseType TypeNoise, frequency, lacunatity, gain float32, octaves, w, h int) []float32 {
+func MakeNoise(noiseType TypeNoise, frequency, lacunatity, gain float32, octaves, w, h int) (noise []float32, min, max float32) {
 	var mutex = &sync.Mutex{}
-	noise := make([]float32, w*h)
+	noise = make([]float32, w*h)
 	// fmt.Println("frequency: ", frequency, " lacunatity:", lacunatity, " gain:", gain, " octaves:", octaves)
-	min := float32(9999.0)
-	max := float32(-9999.0)
+	min = float32(9999.0)
+	max = float32(-9999.0)
 	//TODO goroutinue优化
 	var wg sync.WaitGroup
 	numCPU := runtime.NumCPU()
@@ -86,7 +86,7 @@ func MakeNoise(noiseType TypeNoise, frequency, lacunatity, gain float32, octaves
 		}(i)
 	}
 	wg.Wait()
-	return noise
+	return noise, min, max
 }
 
 /* This code ported to Go from Stefan Gustavson's C implementation, his comments follow:
@@ -202,7 +202,7 @@ func Snoise2(x, y float32) float32 {
 	} else { // lower triangle, XY order: (0,0)->(1,0)->(1,1)
 		i1 = 0
 		j1 = 1
-	} // upper triangle, YX order: (0,0)->(0,1)->(1,1)
+	}                // upper triangle, YX order: (0,0)->(0,1)->(1,1)
 
 	// A step of (1,0) in (i,j) means a step of (1-c,-c) in (x,y), and
 	// a step of (0,1) in (i,j) means a step of (-c,1-c) in (x,y), where
