@@ -49,8 +49,8 @@ func main() {
 			setPixels(x, y, color{byte(x % 255), 0, byte(y % 255)}, pixels)
 		}
 	}
-	tex.Update(nil, pixels, 800*4)
-	renderer.Copy(tex, nil, nil)
+	_ = tex.Update(nil, pixels, 800*4)
+	_ = renderer.Copy(tex, nil, nil)
 	renderer.Present()
 
 	for {

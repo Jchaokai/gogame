@@ -1,6 +1,7 @@
 package noise
 
 import (
+	"math"
 	"runtime"
 	"sync"
 )
@@ -48,18 +49,20 @@ func Fbm2(x, y, frequency, lacunatity, gain float32, octaves int) float32 {
 
 //MakeNoise generates a 2d block of noise
 func MakeNoise(noiseType TypeNoise, frequency, lacunatity, gain float32, octaves, w, h int) (noise []float32, min, max float32) {
-	var mutex = &sync.Mutex{}
 	noise = make([]float32, w*h)
-	// fmt.Println("frequency: ", frequency, " lacunatity:", lacunatity, " gain:", gain, " octaves:", octaves)
-	min = float32(9999.0)
-	max = float32(-9999.0)
-	//TODO goroutinue优化
 	var wg sync.WaitGroup
 	numCPU := runtime.NumCPU()
 	batchSize := len(noise) / numCPU
+	min = math.MaxFloat32
+	max = -math.MaxFloat32
+	minmaxChan := make(chan float32, numCPU*2)
+
+	//TODO goroutinue优化
 	wg.Add(numCPU)
 	for i := 0; i < numCPU; i++ {
 		go func(i int) {
+			innerMax := float32(math.MaxFloat32)
+			innerMin := float32(-math.MaxFloat32)
 			defer wg.Done()
 			start := i * batchSize
 			end := start + batchSize - 1
@@ -71,21 +74,27 @@ func MakeNoise(noiseType TypeNoise, frequency, lacunatity, gain float32, octaves
 				} else if noiseType == FBM {
 					noise[j] = Fbm2(float32(x), float32(y), frequency, lacunatity, gain, octaves)
 				}
-				//is this always correct? go run -race .go has some WARNING
-				if noise[j] < min || noise[j] > max {
-					mutex.Lock()
-					//this is not theadsafe
-					if noise[j] < min {
-						min = noise[j]
-					} else if noise[j] > max {
-						max = noise[j]
-					}
-					mutex.Unlock()
+
+				//this is not theadsafe
+				if noise[j] < innerMin {
+					innerMin = noise[j]
+				} else if noise[j] > innerMax {
+					innerMax = noise[j]
 				}
 			}
+			minmaxChan <- innerMin
+			minmaxChan <- innerMax
 		}(i)
 	}
 	wg.Wait()
+	close(minmaxChan)
+	for v := range minmaxChan {
+		if v < min {
+			min = v
+		} else if v > max {
+			max = v
+		}
+	}
 	return noise, min, max
 }
 
@@ -202,7 +211,7 @@ func Snoise2(x, y float32) float32 {
 	} else { // lower triangle, XY order: (0,0)->(1,0)->(1,1)
 		i1 = 0
 		j1 = 1
-	}                // upper triangle, YX order: (0,0)->(0,1)->(1,1)
+	} // upper triangle, YX order: (0,0)->(0,1)->(1,1)
 
 	// A step of (1,0) in (i,j) means a step of (1-c,-c) in (x,y), and
 	// a step of (0,1) in (i,j) means a step of (-c,1-c) in (x,y), where
