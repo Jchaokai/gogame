@@ -1,5 +1,6 @@
 package noise
 
+//抽象出来一些方法
 import (
 	"math"
 	"runtime"
@@ -61,8 +62,8 @@ func MakeNoise(noiseType TypeNoise, frequency, lacunatity, gain float32, octaves
 	wg.Add(numCPU)
 	for i := 0; i < numCPU; i++ {
 		go func(i int) {
-			innerMax := float32(math.MaxFloat32)
-			innerMin := float32(-math.MaxFloat32)
+			innerMax := float32(-math.MaxFloat32)
+			innerMin := float32(math.MaxFloat32)
 			defer wg.Done()
 			start := i * batchSize
 			end := start + batchSize - 1
@@ -75,7 +76,7 @@ func MakeNoise(noiseType TypeNoise, frequency, lacunatity, gain float32, octaves
 					noise[j] = Fbm2(float32(x), float32(y), frequency, lacunatity, gain, octaves)
 				}
 
-				//this is not theadsafe
+				//this is not thread safe, solve it with channel
 				if noise[j] < innerMin {
 					innerMin = noise[j]
 				} else if noise[j] > innerMax {

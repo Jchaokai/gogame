@@ -1,15 +1,23 @@
 package main
 
 /*
+	1.
 	相比于第一个版本，画面流畅
 	加入比分，谁先得到3分比赛结束
 	加入游戏状态。游戏按pause开始，每得一分暂停一次，得到3分从头开始
 	碰撞优化
+	2.
+	添加一个渐变背景
+	3.
+	用图片里的balloon代替 白色像素球
 */
 
 import (
+	"fmt"
 	"gogame/noise"
+	"image/png"
 	"log"
+	"os"
 	"time"
 
 	"github.com/veandco/go-sdl2/sdl"
@@ -19,6 +27,8 @@ import (
 type gameState int
 
 const (
+	W     int       = 800
+	H     int       = 600
 	start gameState = iota
 	play
 )
@@ -43,19 +53,6 @@ func getGradient(c1, c2 color) []color {
 	return res
 }
 
-func getDualGradient(c1, c2, c3, c4 color) []color {
-	res := make([]color, 256)
-	for i := range res {
-		pct := float32(i) / float32(255)
-		if pct < 0.5 {
-			res[i] = colorLerp(c1, c2, pct*float32(2))
-		} else {
-			res[i] = colorLerp(c3, c4, pct*float32(1.5)-float32(0.5))
-		}
-	}
-	return res
-}
-
 func clamp(min, max, v int) int {
 	if v < min {
 		v = min
@@ -65,12 +62,15 @@ func clamp(min, max, v int) int {
 	return v
 }
 
-func rescaleAndDraw(noise []float32, min, max float32, gradient []color, w, h int) []byte {
+func rescale(noise []float32, min, max float32, gradient []color, w, h int) []byte {
+	fmt.Println("min : ", min, " max : ", max)
 	res := make([]byte, w*h*4)
 	scale := 255.0 / (max - min)
-	offest := min * scale
+	fmt.Println("scale: ", scale)
+	offset := min * scale
+	fmt.Println("offset: ", offset)
 	for i := range noise {
-		noise[i] = noise[i]*scale - offest
+		noise[i] = noise[i]*scale - offset
 		c := gradient[clamp(0, 255, int(noise[i]))]
 		res[i*4] = c.r
 		res[i*4+1] = c.g
@@ -156,18 +156,18 @@ func (ball *ball) update(leftpaddle *paddle, rightpaddle *paddle, elapsedTime fl
 	ball.x += ball.xVelocity * elapsedTime
 	ball.y += ball.yVelocity * elapsedTime
 	//TODO handle collisions
-	if ball.y-ball.radius < 0 || ball.y+ball.radius > 600 {
+	if ball.y-ball.radius < 0 || ball.y+ball.radius > float32(H) {
 		ball.yVelocity = -ball.yVelocity
 	}
 	if ball.x < 0 {
 		rightpaddle.score++
-		ball.x = 400
-		ball.y = 300
+		ball.x = float32(W / 2)
+		ball.y = float32(H / 2)
 		state = start
-	} else if int(ball.x) > 800 {
+	} else if int(ball.x) > W {
 		leftpaddle.score++
-		ball.x = 400
-		ball.y = 300
+		ball.x = float32(W / 2)
+		ball.y = float32(H / 2)
 		state = start
 	}
 	if ball.x-ball.radius < leftpaddle.x+leftpaddle.w/2 {
@@ -226,9 +226,73 @@ func (paddle *paddle) update(keystate []uint8, elapsedTime float32) {
 	}
 
 }
+
 func (paddle *paddle) aiUpdate(ball *ball, elapsedTime float32) {
 	paddle.y = ball.y
 
+}
+
+type texture struct {
+	pos
+	pixels      []byte
+	w, h, pitch int
+}
+
+func (tex *texture) drawAlpha(pixels []byte) {
+	for y := 0; y < tex.h; y++ {
+		for x := 0; x < tex.w; x++ {
+			screenY := y + int(tex.y)
+			screenX := x + int(tex.x)
+			if screenX >= 0 && screenX < W && screenY >= 0 && screenY < H {
+				texIndex := y*tex.pitch + x*4
+				screenIndex := screenY*W*4 + screenX*4
+				srcR := int(tex.pixels[texIndex])
+				srcG := int(tex.pixels[texIndex+1])
+				srcB := int(tex.pixels[texIndex+2])
+				srcA := int(tex.pixels[texIndex+3])
+				dstR := int(pixels[screenIndex])
+				dstG := int(pixels[screenIndex+1])
+				dstB := int(pixels[screenIndex+2])
+
+				rstR := (srcR*255 + dstR*(255-srcA)) / 255
+				rstG := (srcG*255 + dstG*(255-srcA)) / 255
+				rstB := (srcB*255 + dstB*(255-srcA)) / 255
+
+				pixels[screenIndex] = byte(rstR)
+				pixels[screenIndex+1] = byte(rstG)
+				pixels[screenIndex+2] = byte(rstB)
+			}
+		}
+	}
+}
+func loadOneBalloon() texture {
+	file, e := os.Open("../balloons/balloon_green.png")
+	if e != nil {
+		panic(e)
+	}
+	image, e := png.Decode(file)
+	if e != nil {
+		panic(e)
+	}
+	_ = file.Close()
+	w := image.Bounds().Max.X
+	h := image.Bounds().Max.Y
+	balloonsPixels := make([]byte, w*h*4)
+	bIndex := 0
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			r, g, b, a := image.At(x, y).RGBA()
+			balloonsPixels[bIndex] = byte(r / 256)
+			bIndex++
+			balloonsPixels[bIndex] = byte(g / 256)
+			bIndex++
+			balloonsPixels[bIndex] = byte(b / 256)
+			bIndex++
+			balloonsPixels[bIndex] = byte(a / 256)
+			bIndex++
+		}
+	}
+	return texture{pos{float32(W / 2), float32(H / 2)}, balloonsPixels, w, h, w * 4}
 }
 func clear(pixels []byte) {
 	for i := range pixels {
@@ -237,7 +301,7 @@ func clear(pixels []byte) {
 }
 
 func setPixels(x, y int, c color, pixels []byte) {
-	index := (y*800 + x) * 4
+	index := (y*W + x) * 4
 	if index < len(pixels)-4 && index >= 0 {
 		pixels[index] = c.r
 		pixels[index+1] = c.g
@@ -252,7 +316,7 @@ func main() {
 		return
 	}
 	wind, e := sdl.CreateWindow("game_demo", sdl.WINDOWPOS_UNDEFINED, sdl.WINDOWPOS_UNDEFINED,
-		800, 600, sdl.WINDOW_SHOWN)
+		int32(W), int32(H), sdl.WINDOW_SHOWN)
 	if e != nil {
 		log.Fatal(e)
 	}
@@ -262,27 +326,34 @@ func main() {
 		log.Fatal(err)
 	}
 	defer renderer.Destroy()
-	tex, err := renderer.CreateTexture(sdl.PIXELFORMAT_ABGR8888, sdl.TEXTUREACCESS_STREAMING, 800, 600)
+	tex, err := renderer.CreateTexture(sdl.PIXELFORMAT_ABGR8888, sdl.TEXTUREACCESS_STREAMING, int32(W), int32(H))
 	if err != nil {
 		log.Fatal(err)
 		return
 	}
 	defer tex.Destroy()
 
-	pixels := make([]byte, 800*600*4)
+	pixels := make([]byte, W*H*4)
 
 	player1 := paddle{pos{100, 100}, 20, 100, 300, 0, color{255, 255, 255}}
 	player2 := paddle{pos{700, 100}, 20, 100, 300, 0, color{255, 255, 255}}
 	ball := ball{pos{300, 300}, 20, 400, 400, color{255, 255, 255}}
 	keystate := sdl.GetKeyboardState()
 
-	noises, min, max := noise.MakeNoise(noise.FBM, 0.01, 0.2, 2, 3, 800, 600)
+	noises, min, max := noise.MakeNoise(noise.FBM, 0.01, 0.2, 2, 3, W, H)
+	//fmt.Println(noises)
 	gradient := getGradient(color{255, 0, 0}, color{0, 0, 0})
-	noisePixels := rescaleAndDraw(noises, min, max, gradient, 800, 600)
+	//fmt.Println(gradient)
+	noisePixels := rescale(noises, min, max, gradient, W, H)
+	//fmt.Println(noisePixels)
+
+	//加载balloon
+	//balloonsTex := loadOneBalloon()
 
 	var frameStart time.Time
 	var elapsedTime float32
 
+	//main
 	for {
 		frameStart = time.Now()
 		for event := sdl.PollEvent(); event != nil; event = sdl.PollEvent() {
@@ -304,14 +375,16 @@ func main() {
 				state = play
 			}
 		}
+
 		for i := range noisePixels {
 			pixels[i] = noisePixels[i]
 		}
+
 		player1.draw(pixels)
 		player2.draw(pixels)
 		ball.draw(pixels)
 
-		_ = tex.Update(nil, pixels, 800*4)
+		_ = tex.Update(nil, pixels, W*4)
 		_ = renderer.Copy(tex, nil, nil)
 		renderer.Present()
 

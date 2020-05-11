@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"runtime"
 	"sync"
@@ -52,9 +51,9 @@ func clamp(min, max, v int) int {
 
 func rescaleAndDraw(noise []float32, min, max float32, gradient []color, pixels []byte) {
 	scale := 255.0 / (max - min)
-	offest := min * scale
+	offset := min * scale
 	for i := range noise {
-		noise[i] = noise[i]*scale - offest
+		noise[i] = noise[i]*scale - offset
 		c := gradient[clamp(0, 255, int(noise[i]))]
 		pixels[i*4] = c.r
 		pixels[i*4+1] = c.g
@@ -62,6 +61,9 @@ func rescaleAndDraw(noise []float32, min, max float32, gradient []color, pixels 
 	}
 }
 
+//现在我们可以返回两种noise: Turbulence() and Fbm2 (fractal brownian motion)
+
+//Turbulence 让代表noise的值 像湍流一样
 func turbulence(x, y, frequency, lacunatity, gain float32, octaves int) float32 {
 	var sum float32
 	amplitude := float32(1.0)
@@ -93,7 +95,7 @@ func fbm2(x, y, frequency, lacunatity, gain float32, octaves int) float32 {
 func makenoise(pixels []byte, frequency, lacunatity, gain float32, octaves, w, h int) {
 	var mutex = &sync.Mutex{}
 	noise := make([]float32, winHeight*winWidth)
-	fmt.Println("frequency: ", frequency, " lacunatity:", lacunatity, " gain:", gain, " octaves:", octaves)
+	//fmt.Println("frequency: ", frequency, " lacunatity:", lacunatity, " gain:", gain, " octaves:", octaves)
 	min := float32(9999.0)
 	max := float32(-9999.0)
 	//TODO goroutinue优化
@@ -126,7 +128,7 @@ func makenoise(pixels []byte, frequency, lacunatity, gain float32, octaves, w, h
 		}(i)
 	}
 	wg.Wait()
-	// gradient := getGradient(color{255, 0, 0}, color{255, 242, 0})
+	//gradient := getGradient(color{255, 0, 0}, color{255, 242, 0})
 	gradient := getDualGradient(color{0, 0, 175}, color{80, 160, 244}, color{12, 192, 75}, color{255, 255, 255})
 
 	rescaleAndDraw(noise, min, max, gradient, pixels)
