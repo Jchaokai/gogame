@@ -63,12 +63,9 @@ func clamp(min, max, v int) int {
 }
 
 func rescale(noise []float32, min, max float32, gradient []color, w, h int) []byte {
-	fmt.Println("min : ", min, " max : ", max)
 	res := make([]byte, w*h*4)
 	scale := 255.0 / (max - min)
-	fmt.Println("scale: ", scale)
 	offset := min * scale
-	fmt.Println("offset: ", offset)
 	for i := range noise {
 		noise[i] = noise[i]*scale - offset
 		c := gradient[clamp(0, 255, int(noise[i]))]
@@ -232,24 +229,70 @@ func (paddle *paddle) aiUpdate(ball *ball, elapsedTime float32) {
 
 }
 
+func (paddle *paddle) aiUpdateOfBalloon(balloon *balloon, elapsedTime float32) {
+	paddle.y = balloon.y
+}
+func (tex *balloon) update(leftpaddle *paddle, rightpaddle *paddle, elapsedTime float32) {
+	tex.x += tex.xVelocity * elapsedTime
+	tex.y += tex.yVelocity * elapsedTime
+	//TODO handle collisions
+	if tex.y < 0 || tex.y > float32(H) {
+		tex.yVelocity = -tex.yVelocity
+	}
+	if tex.x < 0 {
+		rightpaddle.score++
+		tex.x = float32(W / 2)
+		tex.y = float32(H / 2)
+		state = start
+	} else if int(tex.x) > W {
+		leftpaddle.score++
+		tex.x = float32(W / 2)
+		tex.y = float32(H / 2)
+		state = start
+	}
+	if tex.x < leftpaddle.x+leftpaddle.w/2 {
+		if tex.y > leftpaddle.y-leftpaddle.h/2 &&
+			tex.y < leftpaddle.y+leftpaddle.h/2 {
+			tex.xVelocity = -tex.xVelocity
+			//碰撞优化，ball在碰到paddel后，位置更新到paddle之外
+			tex.x = leftpaddle.x + leftpaddle.w/2.0
+		}
+	}
+	if tex.x > rightpaddle.x-rightpaddle.w/2 {
+		if tex.y > rightpaddle.y-rightpaddle.h/2 &&
+			tex.y < rightpaddle.y+rightpaddle.h/2 {
+			tex.xVelocity = -tex.xVelocity
+			//碰撞优化，ball在碰到paddel后，位置更新到paddle之外
+			tex.x = rightpaddle.x - rightpaddle.w/2.0
+		}
+	}
+
+}
+
 type texture struct {
 	pos
 	pixels      []byte
 	w, h, pitch int
 }
 
-func (tex *texture) drawAlpha(pixels []byte) {
-	for y := 0; y < tex.h; y++ {
-		for x := 0; x < tex.w; x++ {
-			screenY := y + int(tex.y)
-			screenX := x + int(tex.x)
+type balloon struct {
+	texture
+	xVelocity float32
+	yVelocity float32
+}
+
+func (balloon *balloon) drawAlpha(pixels []byte) {
+	for y := 0; y < balloon.h; y++ {
+		for x := 0; x < balloon.w; x++ {
+			screenY := y + int(balloon.y)
+			screenX := x + int(balloon.x)
 			if screenX >= 0 && screenX < W && screenY >= 0 && screenY < H {
-				texIndex := y*tex.pitch + x*4
+				texIndex := y*balloon.pitch + x*4
 				screenIndex := screenY*W*4 + screenX*4
-				srcR := int(tex.pixels[texIndex])
-				srcG := int(tex.pixels[texIndex+1])
-				srcB := int(tex.pixels[texIndex+2])
-				srcA := int(tex.pixels[texIndex+3])
+				srcR := int(balloon.pixels[texIndex])
+				srcG := int(balloon.pixels[texIndex+1])
+				srcB := int(balloon.pixels[texIndex+2])
+				srcA := int(balloon.pixels[texIndex+3])
 				dstR := int(pixels[screenIndex])
 				dstG := int(pixels[screenIndex+1])
 				dstB := int(pixels[screenIndex+2])
@@ -265,7 +308,23 @@ func (tex *texture) drawAlpha(pixels []byte) {
 		}
 	}
 }
-func loadOneBalloon() texture {
+
+//缩方图片大小(默认缩小3倍)
+func (balloon *balloon) scale() *balloon {
+	//我们这里先缩小3倍
+	resPixels := make([]byte, len(balloon.pixels)/3)
+
+	index := 0
+	for i := 0; i < len(balloon.pixels); i += 3 {
+		resPixels[index] = balloon.pixels[i]
+		index++
+	}
+	balloon.pixels = resPixels
+	balloon.w /= 3
+	balloon.h /= 3
+	return balloon
+}
+func loadOneBalloon() balloon {
 	file, e := os.Open("../balloons/balloon_green.png")
 	if e != nil {
 		panic(e)
@@ -292,7 +351,8 @@ func loadOneBalloon() texture {
 			bIndex++
 		}
 	}
-	return texture{pos{float32(W / 2), float32(H / 2)}, balloonsPixels, w, h, w * 4}
+	balloonsTex := texture{pos{float32(W/2) - 60.0, float32(H/2) - 80.0}, balloonsPixels, w, h, w * 4}
+	return balloon{balloonsTex, 400, 400}
 }
 func clear(pixels []byte) {
 	for i := range pixels {
@@ -337,18 +397,17 @@ func main() {
 
 	player1 := paddle{pos{100, 100}, 20, 100, 300, 0, color{255, 255, 255}}
 	player2 := paddle{pos{700, 100}, 20, 100, 300, 0, color{255, 255, 255}}
-	ball := ball{pos{300, 300}, 20, 400, 400, color{255, 255, 255}}
+	//ball := ball{pos{300, 300}, 20, 400, 400, color{255, 255, 255}}
 	keystate := sdl.GetKeyboardState()
 
 	noises, min, max := noise.MakeNoise(noise.FBM, 0.01, 0.2, 2, 3, W, H)
-	//fmt.Println(noises)
 	gradient := getGradient(color{255, 0, 0}, color{0, 0, 0})
-	//fmt.Println(gradient)
 	noisePixels := rescale(noises, min, max, gradient, W, H)
-	//fmt.Println(noisePixels)
 
 	//加载balloon
-	//balloonsTex := loadOneBalloon()
+	balloon := loadOneBalloon()
+	//缩放大小
+	balloon.scale()
 
 	var frameStart time.Time
 	var elapsedTime float32
@@ -364,8 +423,8 @@ func main() {
 		}
 		if state == play {
 			player1.update(keystate, elapsedTime)
-			player2.aiUpdate(&ball, elapsedTime)
-			ball.update(&player1, &player2, elapsedTime)
+			player2.aiUpdateOfBalloon(&balloon, elapsedTime)
+			balloon.update(&player1, &player2, elapsedTime)
 		} else if state == start {
 			if keystate[sdl.SCANCODE_SPACE] != 0 {
 				if player1.score == 3 || player2.score == 3 {
@@ -382,16 +441,17 @@ func main() {
 
 		player1.draw(pixels)
 		player2.draw(pixels)
-		ball.draw(pixels)
+		//ball.draw(pixels)
+		balloon.drawAlpha(pixels)
 
 		_ = tex.Update(nil, pixels, W*4)
 		_ = renderer.Copy(tex, nil, nil)
 		renderer.Present()
 
-		elapsedTime = float32(time.Since(frameStart).Seconds())
-		// fmt.Println(elapsedTime)
-		if elapsedTime < .005 {
-			sdl.Delay(5 - uint32(elapsedTime*1000.0))
+		elapsedTime = float32(time.Since(frameStart).Seconds() * 1000)
+		fmt.Println("每一帧消耗时间: ", elapsedTime)
+		if elapsedTime < 5 {
+			sdl.Delay(5 - uint32(elapsedTime))
 			elapsedTime = float32(time.Since(frameStart).Seconds())
 		}
 	}
