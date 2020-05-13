@@ -22,7 +22,7 @@ sdl2像素绘制游戏
 
 <img src="images/pong2.png" style="float:left;" width = 50% height = 50%/>
 
-### balloons
+### :open_file_folder:balloons
 
 加载图片并绘制
 
@@ -32,10 +32,10 @@ sdl2像素绘制游戏
 
 <img src="images/pong3.png" style="float:left;" width = 50% height = 40%/>
 
+### :open_file_folder:balloos2
+添加背景；不再使用像素绘制；GPU渲染
 
-
-
-
+<img src="images/balloons2.png" style="float:left;" width = 50% height = 40%/>
 
 
 

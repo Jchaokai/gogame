@@ -452,7 +452,7 @@ func main() {
 		fmt.Println("每一帧消耗时间: ", elapsedTime)
 		if elapsedTime < 5 {
 			sdl.Delay(5 - uint32(elapsedTime))
-			elapsedTime = float32(time.Since(frameStart).Seconds())
+			elapsedTime = float32(time.Since(frameStart).Seconds() * 1000)
 		}
 	}
 }

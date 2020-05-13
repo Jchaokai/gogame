@@ -1,13 +1,19 @@
 package main
 
-//我们不再自己手动绘制texture，直接使用sdl2 自带的texture
-//并使用GPU渲染
+//1.我们不再自己手动绘制texture，直接使用sdl2 自带的texture
+//2.并使用GPU渲染
+//3.使用仅有的三个素材，渲染出50个气球，并使用package vector3下的向量代替原有的pos
+//4.移动气球
+
 import (
 	"fmt"
 	"gogame/noise"
+	. "gogame/vector3" //有了. 不需要加包名引用
 	"image/png"
 	"log"
+	"math/rand"
 	"os"
+	"sort"
 	"time"
 
 	"github.com/veandco/go-sdl2/sdl"
@@ -16,29 +22,54 @@ import (
 const (
 	H int = 600
 	W int = 800
+	D int = 100 //三维坐标中的深度
 )
 
 type balloon struct {
 	tex *sdl.Texture
-	pos
+	//不再使用pos，使用vector
+	pos Vector3 //位置
+	dir Vector3 //方向
 	//每个气球有自己缩放比例
-	scale float32
-	w, h  int
+	//scale float32
+	w, h int
 }
 
 func (balloon *balloon) draw(render *sdl.Renderer) {
-	newW := int32(float32(balloon.w) * balloon.scale)
-	newH := int32(float32(balloon.h) * balloon.scale)
-	x := int32(balloon.x - float32(newW)/2)
-	y := int32(balloon.y - float32(newH)/2)
+	scale := (balloon.pos.Z/200 + 0.5) / 2
+	newW := int32(float32(balloon.w) * scale)
+	newH := int32(float32(balloon.h) * scale)
+	x := int32(balloon.pos.X - float32(newW)/2)
+	y := int32(balloon.pos.Y - float32(newH)/2)
 	rect := &sdl.Rect{X: x, Y: y, W: newW, H: newH}
 	_ = render.Copy(balloon.tex, nil, rect)
 
 }
 
-type pos struct {
-	x, y float32
+//更新移动气球
+func (balloon *balloon) Update(elapsedTime float32) {
+	//possible position 原有的位置向量 + 方向向量 * 时间
+	p := Add(balloon.pos, Mult(balloon.dir, elapsedTime))
+	if p.X < 0 || p.X > float32(W) {
+		balloon.dir.X = -balloon.dir.X
+	}
+	if p.Y < 0 || p.X > float32(H) {
+		balloon.dir.Y = -balloon.dir.Y
+	}
+	if p.Z < 0 || p.Z > float32(D) {
+		//气球会忽大忽小
+		balloon.dir.Z = -balloon.dir.Z
+	}
+
+	balloon.pos = Add(balloon.pos, Mult(balloon.dir, elapsedTime))
+
 }
+
+//不再使用pos，使用vector
+//type pos struct {
+//	x, y float32
+//}
+
 type rgba struct {
 	r, g, b byte
 }
@@ -52,9 +83,9 @@ func pixelsToTexture(render *sdl.Renderer, pixels []byte, w, h int) *sdl.Texture
 	return tex
 }
 
-func loadBalloons(render *sdl.Renderer) []balloon {
+func loadBalloons(render *sdl.Renderer, numBalloons int) []*balloon {
 	balloonStrs := []string{"balloon_blue.png", "balloon_green.png", "balloon_red.png"}
-	balloons := make([]balloon, 0)
+	balloonsTexture := make([]*sdl.Texture, len(balloonStrs))
 	for i, value := range balloonStrs {
 		file, e := os.Open(value)
 		if e != nil {
@@ -85,11 +116,22 @@ func loadBalloons(render *sdl.Renderer) []balloon {
 		tex := pixelsToTexture(render, balloonsPixels, w, h)
 		err := tex.SetBlendMode(sdl.BLENDMODE_BLEND)
 		if err != nil {
-			panic(err) //可以用户的硬件不支持
+			panic(err) //可能用户的硬件不支持
 		}
-		balloons = append(balloons, balloon{tex, pos{float32(i * 120), float32(i * 120)}, float32(i+1) / 2, w, h})
+		balloonsTexture[i] = tex
 	}
-
+	balloons := make([]*balloon, numBalloons)
+	for i := range balloons {
+		tex := balloonsTexture[i%3]
+		//生成随机位置
+		pos := Vector3{X: rand.Float32() * float32(W), Y: rand.Float32() * float32(H), Z: rand.Float32() * float32(D)}
+		dir := Vector3{X: rand.Float32() * 0.12, Y: rand.Float32() * 0.12, Z: rand.Float32() * 0.12}
+		_, _, width, height, err := tex.Query()
+		if err != nil {
+			panic(err)
+		}
+		balloons[i] = &balloon{tex, pos, dir, int(width), int(height)}
+	}
 	return balloons
 }
 
@@ -151,21 +193,15 @@ func main() {
 	}
 	defer renderer.Destroy()
 	sdl.SetHint(sdl.HINT_RENDER_SCALE_QUALITY, "1")
-	tex, err := renderer.CreateTexture(sdl.PIXELFORMAT_ABGR8888, sdl.TEXTUREACCESS_STREAMING, int32(W), int32(H))
-	if err != nil {
-		log.Fatal(err)
-		return
-	}
-	defer tex.Destroy()
+
 	//--绘制天空背景图
 	cloudNoises, min, max := noise.MakeNoise(noise.FBM, 0.01, 0.2, 2, 3, W, H)
 	cloudGradient := getGradient(rgba{0, 0, 255}, rgba{255, 255, 255})
 	cloudPixels := rescaleAndDraw(cloudNoises, min, max, cloudGradient, W, H)
 	cloudTexture := pixelsToTexture(renderer, cloudPixels, W, H)
 	//--
-	balloons := loadBalloons(renderer)
-	dir := 1
-
+	balloons := loadBalloons(renderer, 20)
+	var elapsedTime float32
 	for {
 		frameStart := time.Now()
 		for event := sdl.PollEvent(); event != nil; event = sdl.PollEvent() {
@@ -177,20 +213,23 @@ func main() {
 		_ = renderer.Copy(cloudTexture, nil, nil)
 
 		for _, balloon := range balloons {
+			balloon.Update(elapsedTime)
+		}
+		//Z轴排序
+		sort.Slice(balloons, func(i, j int) bool {
+			return balloons[i].pos.Z > balloons[j].pos.Z
+		})
+
+		for _, balloon := range balloons {
 			balloon.draw(renderer)
 		}
 
-		balloons[1].x += float32(dir)
-		if balloons[1].x > 500 || balloons[1].x < 20 {
-			dir = -dir
-		}
-
 		renderer.Present()
-		elapsedTime := float32(time.Since(frameStart).Seconds() * 1000)
+		elapsedTime = float32(time.Since(frameStart).Seconds() * 1000)
 		fmt.Println("每一帧消耗时间: ", elapsedTime)
 		if elapsedTime < 5 {
 			sdl.Delay(5 - uint32(elapsedTime))
-			elapsedTime = float32(time.Since(frameStart).Seconds())
+			elapsedTime = float32(time.Since(frameStart).Seconds() * 1000)
 		}
 	}
 }
