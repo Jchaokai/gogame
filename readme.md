@@ -33,15 +33,19 @@ sdl2像素绘制游戏
 <img src="images/pong3.png" style="float:left;" width = 50% height = 40%/>
 
 ### :open_file_folder:balloos2
-添加背景；不再使用像素绘制；GPU渲染
+- -添加背景；不再使用像素绘制；GPU渲染
 
-<img src="images/balloons2.png" style="float:left;" width = 50% height = 40%/>
+    <img src="images/balloons2.png" style="float:left;" width = 50% height = 40%/>
 
+- 使用仅有的三个素材，渲染出多个气球，并使用package vector3下的向量代替原有的pos
 
+- 气球移动
 
+- 鼠标输入
 
+- 点击气球，气球爆炸，发出声音,爆炸效果
 
-
+    <img src="images/balloons3.png" style="float:left;" width = 50% height = 40%/>
 
 
 
