@@ -6,7 +6,8 @@ package main
 //4.气球移动
 //5.鼠标输入
 //6.点击气球，气球爆炸，发出声音,爆炸效果
-
+//7.气球爆炸，删除气球
+//TODO 8.气球之间的碰撞检测
 import (
 	"gogame/noise"
 	. "gogame/vector3" //有了. 不需要加包名引用
@@ -76,7 +77,7 @@ func newBalloon(tex *sdl.Texture, pos Vector3, dir Vector3, explosionTexture *sd
 		exploding:          false,
 		exploded:           false,
 		explosionStartTime: time.Time{},
-		explosionInternal:  50,
+		explosionInternal:  20,
 		explosionTexture:   explosionTexture,
 	}
 }
@@ -116,50 +117,70 @@ func (balloon *balloon) getCircle() (x, y, r float32) {
 	return
 }
 
-//更新移动气球
-func (balloon *balloon) Update(elapsedTime float32, preMouseState, currentMouseState mouseState, audioState *audioState) {
+func UpdateBalloons(balloons []*balloon, elapsedTime float32, preMouseState, currentMouseState mouseState, audioState *audioState) []*balloon {
 	numAnimations := 16
-	animationElapsed := float32(time.Since(balloon.explosionStartTime).Seconds() * 1000)
-	animationIndex := numAnimations - 1 - int(animationElapsed/balloon.explosionInternal)
-	if animationIndex < 0 {
-		balloon.exploding = false
-		balloon.exploded = true
-	}
-
-	//判断是否点击中了气球
-	//TODO 相同pos只能点中Z轴最大的哪个气球
-	if !preMouseState.leftButton && currentMouseState.leftButton {
-		x, y, r := balloon.getCircle()
-		mouseX := currentMouseState.x
-		mouseY := currentMouseState.y
-		xDiff := float32(mouseX) - x
-		yDiff := float32(mouseY) - y
-		dist := float32(math.Sqrt(float64(xDiff*xDiff + yDiff*yDiff)))
-		if dist < r {
-			//fmt.Println("balloon hit !!!!")
-			//播放声音
-			sdl.ClearQueuedAudio(audioState.deviceID) //中断当前声音，重新播放
-			_ = sdl.QueueAudio(audioState.deviceID, audioState.explodeBytes)
-			sdl.PauseAudio(false)
-			balloon.exploding = true
-			balloon.explosionStartTime = time.Now()
+	balloonClicked := false
+	balloonExploded := false
+	for i := len(balloons) - 1; i >= 0; i-- {
+		balloon := balloons[i]
+		animationElapsed := float32(time.Since(balloon.explosionStartTime).Seconds() * 1000)
+		animationIndex := numAnimations - 1 - int(animationElapsed/balloon.explosionInternal)
+		if balloon.exploding {
+			//爆炸效果结束
+			if animationIndex < 0 {
+				balloon.exploding = false
+				balloon.exploded = true
+				balloonExploded = true
+			}
 		}
+
+		//判断是否点击中了气球
+		//TODO 相同pos只能点中Z轴最大的哪个气球（目前已经算是解决，最外层的气球会爆炸消失）
+		if !balloonClicked && !preMouseState.leftButton && currentMouseState.leftButton {
+			x, y, r := balloon.getCircle()
+			mouseX := currentMouseState.x
+			mouseY := currentMouseState.y
+			xDiff := float32(mouseX) - x
+			yDiff := float32(mouseY) - y
+			dist := float32(math.Sqrt(float64(xDiff*xDiff + yDiff*yDiff)))
+			if dist < r {
+				balloonClicked = true
+				//播放声音
+				sdl.ClearQueuedAudio(audioState.deviceID) //中断当前声音，重新播放
+				_ = sdl.QueueAudio(audioState.deviceID, audioState.explodeBytes)
+				sdl.PauseAudio(false)
+				balloon.exploding = true
+				balloon.explosionStartTime = time.Now()
+			}
+		}
+
+		//--气球移动
+		//possible position 原有的位置向量 + 方向向量 * 时间
+		p := Add(balloon.pos, Mult(balloon.dir, elapsedTime))
+		if p.X < 0 || p.X > float32(W) {
+			balloon.dir.X = -balloon.dir.X
+		}
+		if p.Y < 0 || p.X > float32(H) {
+			balloon.dir.Y = -balloon.dir.Y
+		}
+		if p.Z < 0 || p.Z > float32(D) {
+			//气球会忽大忽小
+			balloon.dir.Z = -balloon.dir.Z
+		}
+		balloon.pos = Add(balloon.pos, Mult(balloon.dir, elapsedTime))
+		//--
 	}
-	//possible position 原有的位置向量 + 方向向量 * 时间
-	p := Add(balloon.pos, Mult(balloon.dir, elapsedTime))
-	if p.X < 0 || p.X > float32(W) {
-		balloon.dir.X = -balloon.dir.X
-	}
-	if p.Y < 0 || p.X > float32(H) {
-		balloon.dir.Y = -balloon.dir.Y
-	}
-	if p.Z < 0 || p.Z > float32(D) {
-		//气球会忽大忽小
-		balloon.dir.Z = -balloon.dir.Z
+	if balloonExploded {
+		filterBalloons := balloons[0:0]
+		for _, balloon := range balloons {
+			if !balloon.exploded {
+				filterBalloons = append(filterBalloons, balloon)
+			}
+		}
+		balloons = filterBalloons
 	}
 
-	balloon.pos = Add(balloon.pos, Mult(balloon.dir, elapsedTime))
-
+	return balloons
 }
 
 type rgba struct {
@@ -319,10 +340,10 @@ func main() {
 		currentMouseState = getMouseState()
 		_ = renderer.Copy(cloudTexture, nil, nil)
 
-		for _, balloon := range balloons {
-			balloon.Update(elapsedTime, preMouseState, currentMouseState, &audioState)
-		}
+		balloons = UpdateBalloons(balloons, elapsedTime, preMouseState, currentMouseState, &audioState)
+		//fmt.Println(len(balloons))
 		//Z轴稳定排序，避免Z轴重叠错乱的画面现象
+		//TODO 使用插入排序，与go内置的排序比较
 		sort.SliceStable(balloons, func(i, j int) bool {
 			return balloons[i].pos.Z > balloons[j].pos.Z
 		})
