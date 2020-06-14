@@ -1,16 +1,10 @@
 package main
 
-//1.我们不再自己手动绘制texture，直接使用sdl2 自带的texture
-//2.并使用GPU渲染
-//3.使用仅有的三个素材，渲染出多个气球，并使用package vector3下的向量代替原有的pos
-//4.气球移动
-//5.鼠标输入
-//6.点击气球，气球爆炸，发出声音,爆炸效果
-//7.气球爆炸，删除气球
-//TODO 8.气球之间的碰撞检测
+
 import (
 	"gogame/evolvingpictures/apt"
 	"log"
+	"math/rand"
 	"time"
 
 	"github.com/veandco/go-sdl2/sdl"
@@ -54,7 +48,7 @@ func pixelsToTexture(render *sdl.Renderer, pixels []byte, w, h int) *sdl.Texture
 	return tex
 }
 
-func APT2Texture(node1, node2 apt.Node, w, h int, renderer *sdl.Renderer) *sdl.Texture {
+func APT2Texture(redNode, greenNode, blueNode apt.Node, w, h int, renderer *sdl.Renderer) *sdl.Texture {
 	// -1.0 and 1.0
 	scale := float32(255 / 2)
 	offset := -1.0 * scale
@@ -64,13 +58,14 @@ func APT2Texture(node1, node2 apt.Node, w, h int, renderer *sdl.Renderer) *sdl.T
 		y := float32(yi)/float32(h)*2 - 1
 		for xi := 0; xi < w; xi++ {
 			x := float32(xi)/float32(w)*2 - 1
-			c := node1.Eval(x, y)
-			c2 := node2.Eval(x, y)
-			pixels[pixelsIndex] = byte(c*scale - offset)
+			r := redNode.Eval(x, y)
+			g := greenNode.Eval(x, y)
+			b := blueNode.Eval(x, y)
+			pixels[pixelsIndex] = byte(r*scale - offset)
 			pixelsIndex++
-			pixels[pixelsIndex] = byte(c2*scale - offset)
+			pixels[pixelsIndex] = byte(g*scale - offset)
 			pixelsIndex++
-			pixels[pixelsIndex] = 0 //byte(c*scale-offset)
+			pixels[pixelsIndex] = byte(b*scale - offset)
 			pixelsIndex++
 			pixelsIndex++ //skip alpha
 		}
@@ -109,15 +104,48 @@ func main() {
 	//currentMouseState := getMouseState()
 	//preMouseState := currentMouseState
 
-	x := apt.OpX{}
-	y := apt.OpY{}
-	sine := apt.OpSin{}
-	plus := apt.OpPlus{}
-	sine.Child = &x
-	plus.LeftChild = &sine
-	plus.RightNode = &y
+	//随机的抽象树
+	rand.Seed(time.Now().UTC().UnixNano())
+	aptR := apt.GetRandomNode()
+	aptG := apt.GetRandomNode()
+	aptB := apt.GetRandomNode()
 
-	texture := APT2Texture(&plus, &sine, W, H, renderer)
+	num := rand.Intn(20)
+	for i := 0; i < num; i++{
+	    aptR.AddRandom(apt.GetRandomNode())
+	}
+	num = rand.Intn(20)
+	for i := 0; i < num; i++{
+		aptG.AddRandom(apt.GetRandomNode())
+	}
+	num = rand.Intn(20)
+	for i := 0; i < num; i++{
+		aptB.AddRandom(apt.GetRandomNode())
+	}
+	for{
+		_, nilCount := aptR.NodeCount()
+		if nilCount == 0 {
+			break
+		}
+		aptR.AddRandom(apt.GetRandomLeaf())
+	}
+	for{
+		_, nilCount := aptG.NodeCount()
+		if nilCount == 0 {
+			break
+		}
+		aptG.AddRandom(apt.GetRandomLeaf())
+	}
+	for{
+		_, nilCount := aptB.NodeCount()
+		if nilCount == 0 {
+			break
+		}
+		aptB.AddRandom(apt.GetRandomLeaf())
+	}
+
+
+	texture := APT2Texture(aptR,aptG,aptB, 640, 480, renderer)
 
 	for {
 		//currentMouseState = getMouseState()
